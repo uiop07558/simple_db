@@ -168,8 +168,8 @@ class InternalPage {
   void putInternal(const vector<byte>& key, pageptr_t page);
   void putInternal(const unsafe_buf<byte>& key, pageptr_t page);
 
-  void delInternal(pagesize_t index);
-  void delRangeInternal(pagesize_t start, pagesize_t end); // [start, end)
+  void delInternal(int32_t index);
+  void delRangeInternal(int32_t start, int32_t end); // [start, end)
 };
 
 class LeafPage {

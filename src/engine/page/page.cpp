@@ -11,6 +11,12 @@ using std::to_underlying;
 
 #define PAGE_TYPE_BIT_DIST 12
 
+#define offsetZeroInternal(itemCount) (sizeof(InternalHeader) + itemCount * sizeof(InternalSlot))
+#define offsetToAddrInternal(itemCount, offset) (offsetZeroInternal(itemCount) + offset)
+
+#define offsetZeroLeaf(itemCount) (sizeof(LeafHeader) + itemCount * sizeof(LeafSlot))
+#define offsetToAddrLeaf(itemCount, offset) (offsetZeroLeaf(itemCount) + offset)
+
 Page::Page() {
   this->data = vector<byte>();
 }
@@ -93,7 +99,7 @@ int32_t InternalPage::leBsearchInternal(InternalSlot* slots, pagesize_t itemCoun
     pagesize_t ksizeMid = slots[mid].ksize.value();
     pagesize_t offsetMid = slots[mid].offset.value();
     unsafe_buf<byte> keyBufMid = {
-      ptr: this->page.data.data() + offsetMid,
+      ptr: this->page.data.data() + offsetToAddrInternal(itemCount, offsetMid),
       len: ksizeMid,
     };
 
@@ -131,10 +137,10 @@ inline unsafe_buf<byte> InternalPage::getKeyInternal(pagesize_t index) {
 
   InternalSlot* slot = reinterpret_cast<InternalSlot*>(this->page.data.data() + sizeof(InternalHeader) + index * sizeof(InternalSlot));
   
-  assert(this->page.byteSize() >= slot->offset.value() + slot->ksize.value());
+  assert(this->page.byteSize() >= offsetToAddrInternal(this->countInternal(), slot->offset.value()) + slot->ksize.value());
 
   unsafe_buf<byte> key = {
-    ptr: &this->page.data[slot->offset.value()],
+    ptr: &this->page.data[offsetToAddrInternal(this->countInternal(), slot->offset.value())],
     len: slot->ksize.value(),
   };
 
@@ -145,13 +151,14 @@ inline pageptr_t InternalPage::getPageptr(int32_t index){
   assert(this->countInternal() > index);
   assert(index >= -1);
 
+  InternalHeader* header = reinterpret_cast<InternalHeader*>(this->page.data.data());
+
   if (index >= 0) {
     InternalSlot* slot = reinterpret_cast<InternalSlot*>(this->page.data.data() + sizeof(InternalHeader) + index * sizeof(InternalSlot));
-    assert(this->page.byteSize() >= slot->offset.value() + slot->ksize.value());
+    assert(this->page.byteSize() >= offsetToAddrInternal(header->itemCount.value(), slot->offset.value()) + slot->ksize.value());
     return slot->gePtr.value();
   }
   else {
-    InternalHeader* header = reinterpret_cast<InternalHeader*>(this->page.data.data() + 0);
     return header->lPtr.value();
   }
 }
@@ -165,14 +172,14 @@ inline void InternalPage::setKeyInternal(pagesize_t index, const unsafe_buf<byte
 
   InternalSlot* slot = reinterpret_cast<InternalSlot*>(this->page.data.data() + sizeof(InternalHeader) + index * sizeof(InternalSlot));
   if (slot->ksize.value() == key.size()) {
-    memcpy(&this->page.data[slot->offset.value()], key.data(), key.size());
+    memcpy(this->page.data.data() + offsetToAddrInternal(this->countInternal(), slot->offset.value()), key.data(), key.size());
   }
   else {
-    pagesize_t offset = slot->offset.value();
-    this->page.data.erase(this->page.data.begin() + offset, this->page.data.begin() + offset + slot->ksize.value());
-    slot = reinterpret_cast<InternalSlot*>(this->page.data.data() + sizeof(InternalHeader) + index * sizeof(InternalSlot));
+    pagesize_t kAddr = offsetToAddrInternal(this->countInternal(), slot->offset.value());
+    this->page.data.erase(this->page.data.begin() + kAddr, this->page.data.begin() + kAddr + slot->ksize.value());
 
-    slot->offset = this->page.data.size();
+    slot = reinterpret_cast<InternalSlot*>(this->page.data.data() + sizeof(InternalHeader) + index * sizeof(InternalSlot));
+    slot->offset = this->page.data.size() - offsetZeroInternal(this->countInternal());
 
     this->page.data.insert(this->page.data.end(), key.data(), key.data() + key.size());
     slot = reinterpret_cast<InternalSlot*>(this->page.data.data() + sizeof(InternalHeader) + index * sizeof(InternalSlot));
@@ -230,6 +237,8 @@ inline void InternalPage::insertInternalSlot(pagesize_t insertIn, const unsafe_b
   assert(this->page.byteSize() >= sizeof(InternalHeader) + header->itemCount.value() * sizeof(InternalSlot));
   InternalSlot* slots = reinterpret_cast<InternalSlot*>(this->page.data.data() + sizeof(InternalHeader));
 
+  header->itemCount = header->itemCount.value() + 1;
+
   InternalSlot newSlot;
   pagesize_t newSlotOffset = sizeof(InternalHeader) + insertIn * sizeof(InternalSlot);
   this->page.data.insert(this->page.data.begin() + newSlotOffset, reinterpret_cast<byte*>(&newSlot), reinterpret_cast<byte*>(&newSlot) + sizeof(InternalSlot));
@@ -237,11 +246,8 @@ inline void InternalPage::insertInternalSlot(pagesize_t insertIn, const unsafe_b
   slots = reinterpret_cast<InternalSlot*>(this->page.data.data() + sizeof(InternalHeader));
   slots[insertIn].ksize = key.size();
   slots[insertIn].gePtr = page;
-  slots[insertIn].offset = this->page.data.size();
+  slots[insertIn].offset = this->page.data.size() - offsetZeroInternal(this->countInternal());
   this->page.data.insert(this->page.data.end(), key.data(), key.data() + key.size());
-
-  header = reinterpret_cast<InternalHeader*>(this->page.data.data() + 0);
-  header->itemCount = header->itemCount.value() + 1;
 }
 
 inline void InternalPage::putInternal(const unsafe_buf<byte>& key, pageptr_t page) {
@@ -264,17 +270,27 @@ inline void InternalPage::putInternal(const unsafe_buf<byte>& key, pageptr_t pag
     return;
   }
 
+  insertIn += 1;
+
   assert(insertIn >= 0);
-  assert(insertIn < header->itemCount.value());
+  assert(insertIn <= header->itemCount.value());
 
   this->insertInternalSlot(insertIn, key, page);
 }
 
-inline void InternalPage::delInternal(pagesize_t index) {
+inline void InternalPage::delInternal(int32_t index) {
   assert(this->countInternal() > index);
 
+  if (index == -1) {
+    InternalHeader* header = reinterpret_cast<InternalHeader*>(this->page.data.data() + 0);
+    header->lPtr = 0;
+    return;
+  }
+
   InternalSlot* slot = reinterpret_cast<InternalSlot*>(this->page.data.data() + sizeof(InternalHeader) + index * sizeof(InternalSlot));
-  auto startKey = this->page.data.begin() + slot->offset.value();
+  pagesize_t delOffset = slot->offset.value();
+  pagesize_t delSize = slot->ksize.value();
+  auto startKey = this->page.data.begin() + offsetToAddrInternal(this->countInternal(), slot->offset.value());
   auto endKey = startKey + slot->ksize.value();
   this->page.data.erase(startKey, endKey);
 
@@ -284,25 +300,22 @@ inline void InternalPage::delInternal(pagesize_t index) {
 
   InternalHeader* header = reinterpret_cast<InternalHeader*>(this->page.data.data() + 0);
   header->itemCount = header->itemCount.value() - 1;
+
+  InternalSlot* slots = reinterpret_cast<InternalSlot*>(this->page.data.data() + sizeof(InternalHeader));
+  for (pagesize_t i = 0; i < this->countInternal(); i++) {
+    if (slots[i].offset.value() >= delOffset) {
+      slots[i].offset = slots[i].offset.value() - delSize;
+    }
+  }
 }
 
-void InternalPage::delRangeInternal(pagesize_t start, pagesize_t end) {
+void InternalPage::delRangeInternal(int32_t start, int32_t end) {
   assert(this->countInternal() >= end);
   assert(end > start);
 
-  for (pagesize_t i = end - 1; i >= start; i--) {
-    InternalSlot* slot = reinterpret_cast<InternalSlot*>(this->page.data.data() + sizeof(InternalHeader) + i * sizeof(InternalSlot));
-    auto startKey = this->page.data.begin() + slot->offset.value();
-    auto endKey = startKey + slot->ksize.value();
-    this->page.data.erase(startKey, endKey);
+  for (int32_t i = end - 1; i >= start; i--) {
+    this->delInternal(i);
   }
-
-  auto startSlot = this->page.data.begin() + sizeof(InternalHeader) + start * sizeof(InternalSlot);
-  auto endSlot = this->page.data.begin() + sizeof(InternalHeader) + end * sizeof(InternalSlot);
-  this->page.data.erase(startSlot, endSlot);
-
-  InternalHeader* header = reinterpret_cast<InternalHeader*>(this->page.data.data() + 0);
-  header->itemCount = header->itemCount.value() - (end - start);
 }
 
 int32_t LeafPage::exactBsearchLeaf(LeafSlot* slots, pagesize_t itemCount, const unsafe_buf<byte>& key) {
@@ -317,7 +330,7 @@ int32_t LeafPage::exactBsearchLeaf(LeafSlot* slots, pagesize_t itemCount, const 
     pagesize_t ksizeMid = slots[mid].ksize.value();
     pagesize_t offsetMid = slots[mid].offset.value();
     unsafe_buf<byte> keyBufMid = {
-      ptr: this->page.data.data() + offsetMid,
+      ptr: this->page.data.data() + offsetToAddrLeaf(itemCount, offsetMid),
       len: ksizeMid,
     };
 
@@ -350,7 +363,7 @@ int32_t LeafPage::leBsearchLeaf(LeafSlot* slots, pagesize_t itemCount, const uns
     pagesize_t ksizeMid = slots[mid].ksize.value();
     pagesize_t offsetMid = slots[mid].offset.value();
     unsafe_buf<byte> keyBufMid = {
-      ptr: this->page.data.data() + offsetMid,
+      ptr: this->page.data.data() + offsetToAddrLeaf(itemCount, offsetMid),
       len: ksizeMid,
     };
 
@@ -393,27 +406,21 @@ inline void LeafPage::putLeaf(const unsafe_buf<byte> &key, const unsafe_buf<byte
     return;
   }
   
-  if (insertIn < 0) {
-    insertIn = 0;
-  }
+  insertIn += 1;
+  
+  header->itemCount = header->itemCount.value() + 1;
 
   LeafSlot newSlot;
   pagesize_t newSlotOffset = sizeof(LeafHeader) + insertIn * sizeof(LeafSlot);
-  for (pagesize_t i = 0; i < header->itemCount.value(); i++) {
-    slots[i].offset = slots[i].offset.value() + sizeof(LeafSlot);
-  }
   this->page.data.insert(this->page.data.begin() + newSlotOffset, reinterpret_cast<byte*>(&newSlot), reinterpret_cast<byte*>(&newSlot) + sizeof(LeafSlot));
 
   slots = reinterpret_cast<LeafSlot*>(this->page.data.data() + sizeof(LeafHeader));
   slots[insertIn].ksize = key.len;
   slots[insertIn].vsize = value.len;
   slots[insertIn].flags = 0;
-  slots[insertIn].offset = this->page.data.size();
+  slots[insertIn].offset = this->page.data.size() - offsetZeroLeaf(this->countLeaf());
   this->page.data.insert(this->page.data.end(), key.ptr, key.ptr + key.len);
   this->page.data.insert(this->page.data.end(), value.ptr, value.ptr + value.len);
-
-  header = reinterpret_cast<LeafHeader*>(this->page.data.data() + 0);
-  header->itemCount = header->itemCount.value() + 1;
 }
 
 inline pagesize_t LeafPage::countLeaf() {
@@ -430,10 +437,10 @@ inline unsafe_buf<byte> LeafPage::getKeyLeaf(pagesize_t index) {
 
   LeafSlot* slot = reinterpret_cast<LeafSlot*>(this->page.data.data() + sizeof(LeafHeader) + index * sizeof(LeafSlot));
   
-  assert(this->page.byteSize() >= slot->offset.value() + slot->ksize.value());
+  assert(this->page.byteSize() >= offsetToAddrLeaf(this->countLeaf(), slot->offset.value()) + slot->ksize.value());
 
   unsafe_buf<byte> key = {
-    ptr: &this->page.data[slot->offset.value()],
+    ptr: &this->page.data[offsetToAddrLeaf(this->countLeaf(), slot->offset.value())],
     len: slot->ksize.value(),
   };
 
@@ -445,10 +452,10 @@ inline unsafe_buf<byte> LeafPage::getValue(pagesize_t index) {
 
   LeafSlot* slot = reinterpret_cast<LeafSlot*>(this->page.data.data() + sizeof(LeafHeader) + index * sizeof(LeafSlot));
   
-  assert(this->page.byteSize() >= slot->offset.value() + slot->ksize.value() + slot->vsize.value());
+  assert(this->page.byteSize() >= offsetToAddrLeaf(this->countLeaf(), slot->offset.value()) + slot->ksize.value() + slot->vsize.value());
 
   unsafe_buf<byte> key = {
-    ptr: &this->page.data[slot->offset.value() + slot->ksize.value()],
+    ptr: &this->page.data[offsetToAddrLeaf(this->countLeaf(), slot->offset.value()) + slot->ksize.value()],
     len: slot->vsize.value(),
   };
 
@@ -466,13 +473,13 @@ inline void LeafPage::setKeyLeaf(pagesize_t index, const unsafe_buf<byte>& key, 
   pagesize_t kvSizeOld = slot->ksize.value() + slot->vsize.value();
   pagesize_t kvSizeNew = key.size() + value.size();
 
-  pagesize_t offset = slot->offset.value();  
+  pagesize_t kvAddr = offsetToAddrLeaf(this->countLeaf(), slot->offset.value());  
   if (kvSizeNew == kvSizeOld) {
-    memcpy(this->page.data.data() + offset, key.data(), key.size());
-    memcpy(&this->page.data[offset + slot->ksize.value()], value.data(), value.size());
+    memcpy(this->page.data.data() + kvAddr, key.data(), key.size());
+    memcpy(&this->page.data[kvAddr + slot->ksize.value()], value.data(), value.size());
   }
   else {
-    this->page.data.erase(this->page.data.begin() + offset, this->page.data.begin() + offset + kvSizeOld);
+    this->page.data.erase(this->page.data.begin() + kvAddr, this->page.data.begin() + kvAddr + kvSizeOld);
 
     slot = reinterpret_cast<LeafSlot*>(this->page.data.data() + sizeof(LeafHeader) + index * sizeof(LeafSlot));
     slot->offset = this->page.data.size();
@@ -502,8 +509,10 @@ inline void LeafPage::delLeaf(pagesize_t index) {
   assert(this->countLeaf() > index);
 
   LeafSlot* slot = reinterpret_cast<LeafSlot*>(this->page.data.data() + sizeof(LeafHeader) + index * sizeof(LeafSlot));
-  auto startKey = this->page.data.begin() + slot->offset.value();
-  auto endKey = startKey + slot->ksize.value() + slot->vsize.value();
+  pagesize_t delOffset = slot->offset.value();
+  pagesize_t delSize = slot->ksize.value() + slot->vsize.value();
+  auto startKey = this->page.data.begin() + offsetToAddrLeaf(this->countLeaf(), delOffset);
+  auto endKey = startKey + delSize;
   this->page.data.erase(startKey, endKey);
 
   auto startSlot = this->page.data.begin() + sizeof(LeafHeader) + index * sizeof(LeafSlot);
@@ -512,6 +521,13 @@ inline void LeafPage::delLeaf(pagesize_t index) {
 
   LeafHeader* header = reinterpret_cast<LeafHeader*>(this->page.data.data() + 0);
   header->itemCount = header->itemCount.value() - 1;
+
+  LeafSlot* slots = reinterpret_cast<LeafSlot*>(this->page.data.data() + sizeof(LeafHeader));
+  for (pagesize_t i = 0; i < this->countLeaf(); i++) {
+    if (slots[i].offset.value() >= delOffset) {
+      slots[i].offset = slots[i].offset.value() - delSize;
+    }
+  }
 }
 
 inline void LeafPage::delRangeLeaf(pagesize_t start, pagesize_t end) {
@@ -519,16 +535,6 @@ inline void LeafPage::delRangeLeaf(pagesize_t start, pagesize_t end) {
   assert(end > start);
 
   for (pagesize_t i = end - 1; i >= start; i--) {
-    LeafSlot* slot = reinterpret_cast<LeafSlot*>(this->page.data.data() + sizeof(LeafHeader) + i * sizeof(LeafSlot));
-    auto startKey = this->page.data.begin() + slot->offset.value();
-    auto endKey = startKey + slot->ksize.value() + slot->vsize.value();
-    this->page.data.erase(startKey, endKey);
+    this->delLeaf(i);
   }
-
-  auto startSlot = this->page.data.begin() + sizeof(LeafHeader) + start * sizeof(LeafSlot);
-  auto endSlot = this->page.data.begin() + sizeof(LeafHeader) + end * sizeof(LeafSlot);
-  this->page.data.erase(startSlot, endSlot);
-
-  LeafHeader* header = reinterpret_cast<LeafHeader*>(this->page.data.data() + 0);
-  header->itemCount = header->itemCount.value() - (end - start);
 }

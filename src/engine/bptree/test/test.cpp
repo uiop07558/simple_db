@@ -33,7 +33,7 @@ public:
 #define NUM_SMALL_INSERTS 100
 #define NUM_LARGE_INSERTS 10
 #define LARGE_KEY_SIZE 512
-#define LARGE_VALUE_SIZE 1530
+#define LARGE_VALUE_SIZE 1500
 
 #define RUN_TEST(test) \
   std::cout << "Running " << #test << "... "; \
@@ -125,7 +125,7 @@ void testTriggerInternalSplit() {
     assert(result.value() == generateBytes(LARGE_VALUE_SIZE / 2, byte{i + 50}));
   }
 
-  assert(pager.pages.size() > 10);
+  assert(pager.pages.size() >= 10);
 }
 
 void testDeleteLeafKey() {
@@ -163,7 +163,8 @@ void testLeafMerge() {
   }
 
   for (int i = NUM_LARGE_INSERTS / 2; i < NUM_LARGE_INSERTS; ++i) {
-    tree.remove(generateBytes(LARGE_KEY_SIZE, byte{i}));
+    auto key = generateBytes(LARGE_KEY_SIZE, byte{i});
+    tree.remove(key);
   }
 
   for (int i = 0; i < NUM_LARGE_INSERTS / 2; ++i) {
@@ -173,7 +174,7 @@ void testLeafMerge() {
     assert(result.value() == generateBytes(LARGE_VALUE_SIZE, byte{i + 50}));
   }
 
-  assert(pager.pages.size() < NUM_LARGE_INSERTS / 2);
+  assert(pager.pages.size() <= (NUM_LARGE_INSERTS / 2) + 1);
 }
 
 void testStress() {

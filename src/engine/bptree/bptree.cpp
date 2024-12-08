@@ -36,6 +36,9 @@ void Bptree::remove(const vector<byte> &key) {
   pageptr_t newId = 0;
 
   deleteRecursive(rootId, key, newId);
+  if (newId == 0) {
+    return;
+  }
 
   Page page = this->pager.getPage(newId);
   if (page.getPageType() == PageType::Internal) {
@@ -44,9 +47,10 @@ void Bptree::remove(const vector<byte> &key) {
     pageptr_t newRootId = 0;
     if (rootCount == 0) {
       newRootId = root.getPageptr(-1);
-      this->rootId = newRootId;
+      this->pager.delPage(newId);
+      newId = newRootId;
     }
-    else if (rootCount == 1) {
+    else if (rootCount == 1 && root.getPageptr(-1) == 0) {
       for (pagesize_t i = 0; i < rootCount; i++) {
         newRootId = root.getPageptr(i);
         if (newRootId != 0) {
@@ -54,9 +58,12 @@ void Bptree::remove(const vector<byte> &key) {
         }
       }
       assert(newRootId != 0);
-      this->rootId = newRootId;
+      this->pager.delPage(newId);
+      newId = newRootId;
     }
   }
+
+  this->rootId = newId;
 
   return;
 }
@@ -244,7 +251,7 @@ void Bptree::deleteRecursive(pageptr_t pageId, const std::vector<byte>& key, pag
               InternalPage sibling(siblingPage);
 
               if (sibling.getPageptr(-1) != 0) {
-                unsafe_buf<byte> k = internal.getKeyInternal(childIndex);
+                unsafe_buf<byte> k = internal.getKeyInternal(siblingIndex);
                 pageptr_t p = sibling.getPageptr(-1);
                 child.putInternal(k, p);
               }
@@ -261,16 +268,33 @@ void Bptree::deleteRecursive(pageptr_t pageId, const std::vector<byte>& key, pag
               assert(false && "deleteRecursive() got page of wrong type");
             }
           }
-          this->pager.delPage(siblingId);
-          internal.delInternal(siblingIndex);
+
+          vector<byte> mergeKey;
+
+          if (siblingIndex < childIndex) {
+            mergeKey = internal.getKeyInternal(siblingIndex).toVector();
+
+            internal.delInternal(childIndex);
+            internal.delInternal(siblingIndex);
+          }
+          else {
+            assert(childIndex != siblingIndex);
+            mergeKey = internal.getKeyInternal(childIndex).toVector();
+
+            internal.delInternal(siblingIndex);
+            internal.delInternal(childIndex);
+          }
+
           this->pager.delPage(childNewId);
-          pageptr_t childNewIdAfterMerge = this->pager.addPage(childPage); 
-          childIndex != -1 ? internal.setGEptr(childIndex, childNewIdAfterMerge) : internal.setLptr(childNewIdAfterMerge);
+          this->pager.delPage(siblingId);
+          pageptr_t childNewIdAfterMerge = this->pager.addPage(childPage);
+          internal.putInternal(mergeKey, childNewIdAfterMerge);
         }
       }
       
       this->pager.delPage(pageId);
       newId = this->pager.addPage(internal.page);
+      break;
     }
     default: {
       assert(false && "deleteRecursive() got page of wrong type");
