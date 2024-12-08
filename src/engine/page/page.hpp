@@ -97,7 +97,6 @@ namespace {
   struct InternalHeader {
     Header header;
     big_uint16_buf_t itemCount;
-    big_uint48_buf_t lPtr; // less
   };
 
   struct InternalSlot {
@@ -155,12 +154,11 @@ class InternalPage {
   
   // returned values are valid only during object's (page) lifetime
   unsafe_buf<byte> getKeyInternal(pagesize_t index);
-  pageptr_t getPageptr(int32_t index); // -1 means lPtr
+  pageptr_t getPageptr(pagesize_t index); // -1 means lPtr
 
   void setKeyInternal(pagesize_t index, const vector<byte>& key, pageptr_t page);
   void setKeyInternal(pagesize_t index, const unsafe_buf<byte>& key, pageptr_t page);
   void setGEptr(pagesize_t index, pageptr_t page);
-  void setLptr(pageptr_t page);
 
   int32_t searchInternal(const vector<byte>& key); // -1 means key is less than anything else (get lPtr)
   int32_t searchInternal(const unsafe_buf<byte>& key); // -1 means key is less than anything else (get lPtr)
@@ -168,8 +166,8 @@ class InternalPage {
   void putInternal(const vector<byte>& key, pageptr_t page);
   void putInternal(const unsafe_buf<byte>& key, pageptr_t page);
 
-  void delInternal(int32_t index);
-  void delRangeInternal(int32_t start, int32_t end); // [start, end)
+  void delInternal(pagesize_t index);
+  void delRangeInternal(pagesize_t start, pagesize_t end); // [start, end)
 };
 
 class LeafPage {

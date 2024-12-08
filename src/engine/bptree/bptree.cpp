@@ -6,23 +6,26 @@
 
 using std::nullopt;
 using std::swap;
+using std::max;
+using std::min;
 
 Bptree::Bptree(Pager& pager, pageptr_t rootId): pager(pager), rootId(rootId) {}
 
 void Bptree::insert(const vector<byte> &key, const vector<byte> &value) {
   pageptr_t newId = 0;
   bool isSplit = false;
+  vector<byte> oldRootKey;
   vector<byte> splitKey;
   pageptr_t splitId = 0;
 
-  this->insertRecursive(this->rootId, key, value, newId, isSplit, splitKey, splitId);
+  this->insertRecursive(this->rootId, key, value, newId, isSplit, splitKey, oldRootKey, splitId);
 
   if (isSplit) {
-    auto newRootPage = Page::createInternal();
+    Page newRootPage = Page::createInternal();
     InternalPage newRoot(newRootPage);
 
     newRoot.putInternal(splitKey, splitId);
-    newRoot.setLptr(newId);
+    newRoot.putInternal(oldRootKey, newId);
 
     this->pager.delPage(this->rootId);
     this->rootId = this->pager.addPage(newRoot.page);
@@ -45,27 +48,14 @@ void Bptree::remove(const vector<byte> &key) {
     InternalPage root(page);
     pagesize_t rootCount = root.countInternal();
     pageptr_t newRootId = 0;
-    if (rootCount == 0) {
-      newRootId = root.getPageptr(-1);
-      this->pager.delPage(newId);
-      newId = newRootId;
-    }
-    else if (rootCount == 1 && root.getPageptr(-1) == 0) {
-      for (pagesize_t i = 0; i < rootCount; i++) {
-        newRootId = root.getPageptr(i);
-        if (newRootId != 0) {
-          break;
-        }
-      }
+    if (rootCount == 1) {
+      newRootId = root.getPageptr(0);
       assert(newRootId != 0);
       this->pager.delPage(newId);
       newId = newRootId;
     }
   }
-
   this->rootId = newId;
-
-  return;
 }
 
 optional<vector<byte>> Bptree::search(const vector<byte>& key) const {
@@ -88,6 +78,9 @@ optional<vector<byte>> Bptree::searchRecursive(pageptr_t pageId, const std::vect
     case PageType::Internal: {
       InternalPage internal(page);
       int32_t childIndex = internal.searchInternal(key);
+      if (childIndex == -1) {
+        return nullopt;
+      }
       pageptr_t childId = internal.getPageptr(childIndex);
 
       return searchRecursive(childId, key);
@@ -100,13 +93,14 @@ optional<vector<byte>> Bptree::searchRecursive(pageptr_t pageId, const std::vect
 }
 
 void Bptree::insertRecursive(pageptr_t pageId, const vector<byte>& key, const vector<byte> &value, 
-    pageptr_t& newId, bool& isSplit, vector<byte>& splitKey, pageptr_t& splitId) {
+    pageptr_t& newId, bool& isSplit, vector<byte>& splitKey, vector<byte>& oldRootKey, pageptr_t& splitId) {
   auto page = this->pager.getPage(pageId);
   
   switch (page.getPageType()) {
     case PageType::Leaf: {
       LeafPage leaf(page);
       leaf.putLeaf(key, value);
+      oldRootKey = leaf.getKeyLeaf(0).toVector();
 
       isSplit = false;
       if (leaf.page.isOversized()) {
@@ -144,12 +138,14 @@ void Bptree::insertRecursive(pageptr_t pageId, const vector<byte>& key, const ve
       vector<byte> childSplitKey;
       pageptr_t childSplitId = 0;
 
-      insertRecursive(insertId, key, value, childNewId, isChildSplit, childSplitKey, childSplitId);
+      insertRecursive(insertId, key, value, childNewId, isChildSplit, childSplitKey, oldRootKey, childSplitId);
 
-      insertToIdx != -1 ? internal.setGEptr(insertToIdx, childNewId) : internal.setLptr(childNewId);
+      assert(insertToIdx >= 0);
+      internal.setGEptr(insertToIdx, childNewId);
       if (isChildSplit) {
         internal.putInternal(childSplitKey, childSplitId);
       }
+      oldRootKey = internal.getKeyInternal(0).toVector();
 
       isSplit = false;
       if (internal.page.isOversized()) {
@@ -210,20 +206,17 @@ void Bptree::deleteRecursive(pageptr_t pageId, const std::vector<byte>& key, pag
       pageptr_t childNewId = 0;
       deleteRecursive(childId, key, childNewId);
 
-      childIndex != -1 ? internal.setGEptr(childIndex, childNewId) : internal.setLptr(childNewId);
+      assert(childIndex >= 0);
+      internal.setGEptr(childIndex, childNewId);
 
       Page childPage = this->pager.getPage(childNewId);
-      bool haveSiblings = (childIndex == -1 && internal.countInternal() >= 1) || (childIndex >= 0 && internal.countInternal() >= 2)
-        || (childIndex >= 0 && internal.getPageptr(-1) != 0);
+      bool haveSiblings = childIndex >= 0 && internal.countInternal() >= 2;
 
       if (childPage.isUndersized() && haveSiblings) {
         int32_t siblingIndex = 0;
         if (childIndex == internal.countInternal() - 1) {
           assert(childIndex != -1);
           siblingIndex = childIndex - 1;
-        }
-        else if (childIndex == 1 && internal.getPageptr(-1) != 0) {
-          siblingIndex = -1;
         }
         else {
           siblingIndex = childIndex + 1;
@@ -250,12 +243,6 @@ void Bptree::deleteRecursive(pageptr_t pageId, const std::vector<byte>& key, pag
               InternalPage child(childPage);
               InternalPage sibling(siblingPage);
 
-              if (sibling.getPageptr(-1) != 0) {
-                unsafe_buf<byte> k = internal.getKeyInternal(siblingIndex);
-                pageptr_t p = sibling.getPageptr(-1);
-                child.putInternal(k, p);
-              }
-
               for (pagesize_t i = 0; i < sibling.countInternal(); i++) {
                 unsafe_buf<byte> k = sibling.getKeyInternal(i);
                 pageptr_t p = sibling.getPageptr(i);
@@ -270,20 +257,10 @@ void Bptree::deleteRecursive(pageptr_t pageId, const std::vector<byte>& key, pag
           }
 
           vector<byte> mergeKey;
-
-          if (siblingIndex < childIndex) {
-            mergeKey = internal.getKeyInternal(siblingIndex).toVector();
-
-            internal.delInternal(childIndex);
-            internal.delInternal(siblingIndex);
-          }
-          else {
-            assert(childIndex != siblingIndex);
-            mergeKey = internal.getKeyInternal(childIndex).toVector();
-
-            internal.delInternal(siblingIndex);
-            internal.delInternal(childIndex);
-          }
+          mergeKey = internal.getKeyInternal(min(siblingIndex, childIndex)).toVector();
+          
+          internal.delInternal(max(siblingIndex, childIndex));
+          internal.delInternal(min(siblingIndex, childIndex));
 
           this->pager.delPage(childNewId);
           this->pager.delPage(siblingId);

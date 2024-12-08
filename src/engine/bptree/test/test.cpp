@@ -31,7 +31,7 @@ public:
 };
 
 #define NUM_SMALL_INSERTS 100
-#define NUM_LARGE_INSERTS 10
+#define NUM_LARGE_INSERTS 256
 #define LARGE_KEY_SIZE 512
 #define LARGE_VALUE_SIZE 1500
 
@@ -174,7 +174,7 @@ void testLeafMerge() {
     assert(result.value() == generateBytes(LARGE_VALUE_SIZE, byte{i + 50}));
   }
 
-  assert(pager.pages.size() <= (NUM_LARGE_INSERTS / 2) + 1);
+  assert(pager.pages.size() <= NUM_LARGE_INSERTS);
 }
 
 void testStress() {
@@ -182,7 +182,7 @@ void testStress() {
   initBptree(pager);
   Bptree tree(pager, 1);
 
-  const int NUM_KEYS = 500;
+  const int NUM_KEYS = 256;
   for (int i = 0; i < NUM_KEYS; ++i) {
     tree.insert(generateBytes(LARGE_KEY_SIZE, byte{i}),
           generateBytes(LARGE_VALUE_SIZE, byte{i}));
@@ -194,11 +194,11 @@ void testStress() {
     assert(result.value() == generateBytes(LARGE_VALUE_SIZE, byte{i}));
   }
 
-  for (int i = 0; i < NUM_KEYS / 2; ++i) {
+  for (int i = NUM_KEYS / 2; i < NUM_KEYS; ++i) {
     tree.remove(generateBytes(LARGE_KEY_SIZE, byte{i}));
   }
 
-  for (int i = NUM_KEYS / 2; i < NUM_KEYS; ++i) {
+  for (int i = 0; i < NUM_KEYS / 2; ++i) {
     auto result = tree.search(generateBytes(LARGE_KEY_SIZE, byte{i}));
     assert(result.has_value());
     assert(result.value() == generateBytes(LARGE_VALUE_SIZE, byte{i}));

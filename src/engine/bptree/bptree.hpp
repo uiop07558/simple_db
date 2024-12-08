@@ -22,7 +22,7 @@ class Bptree {
   Pager& pager;
 
   void insertRecursive(pageptr_t pageId, const vector<byte>& key, const vector<byte>& value,
-    pageptr_t& newId, bool& isSplit, vector<byte>& splitKey, pageptr_t& splitId);
+    pageptr_t& newId, bool& isSplit, vector<byte>& splitKey, vector<byte>& oldRootKey, pageptr_t& splitId);
   optional<vector<byte>> searchRecursive(pageptr_t pageId, const std::vector<byte>& key) const;
   void deleteRecursive(pageptr_t pageId, const std::vector<byte>& key, pageptr_t& newId);
 };

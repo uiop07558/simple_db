@@ -36,7 +36,6 @@ Page Page::createInternal() {
   InternalHeader* header = reinterpret_cast<InternalHeader*>(page.data.data() + 0);
   page.setPageType(PageType::Internal);
   header->itemCount = 0;
-  header->lPtr = 0;
 
   return page;
 }
@@ -147,20 +146,15 @@ inline unsafe_buf<byte> InternalPage::getKeyInternal(pagesize_t index) {
   return key;
 }
 
-inline pageptr_t InternalPage::getPageptr(int32_t index){
+inline pageptr_t InternalPage::getPageptr(pagesize_t index){
   assert(this->countInternal() > index);
-  assert(index >= -1);
+  assert(index >= 0);
 
   InternalHeader* header = reinterpret_cast<InternalHeader*>(this->page.data.data());
 
-  if (index >= 0) {
-    InternalSlot* slot = reinterpret_cast<InternalSlot*>(this->page.data.data() + sizeof(InternalHeader) + index * sizeof(InternalSlot));
-    assert(this->page.byteSize() >= offsetToAddrInternal(header->itemCount.value(), slot->offset.value()) + slot->ksize.value());
-    return slot->gePtr.value();
-  }
-  else {
-    return header->lPtr.value();
-  }
+  InternalSlot* slot = reinterpret_cast<InternalSlot*>(this->page.data.data() + sizeof(InternalHeader) + index * sizeof(InternalSlot));
+  assert(this->page.byteSize() >= offsetToAddrInternal(header->itemCount.value(), slot->offset.value()) + slot->ksize.value());
+  return slot->gePtr.value();
 }
 
 inline void InternalPage::setKeyInternal(pagesize_t index, const vector<byte>& key, pageptr_t page) {
@@ -195,14 +189,6 @@ inline void InternalPage::setGEptr(pagesize_t index, pageptr_t page) {
   slot->gePtr = page;
 }
 
-inline void InternalPage::setLptr(pageptr_t page) {
-  assert(this->page.getPageType() == PageType::Internal);
-  assert(this->page.byteSize() >= sizeof(InternalHeader));
-
-  InternalHeader* header = reinterpret_cast<InternalHeader*>(this->page.data.data() + 0);
-  header->lPtr = page;
-}
-
 inline int32_t InternalPage::searchInternal(const vector<byte> &key) {
   return this->searchInternal(unsafe_buf<byte>::createFromVector(key));
 }
@@ -214,9 +200,6 @@ inline int32_t InternalPage::searchInternal(const unsafe_buf<byte> &key) {
   pagesize_t itemCount = header->itemCount.value();
 
   assert(this->page.byteSize() >= sizeof(InternalHeader) + itemCount * sizeof(InternalSlot));
-  if (itemCount == 0) {
-    return -1;
-  }
   InternalSlot* slots = reinterpret_cast<InternalSlot*>(this->page.data.data() + sizeof(InternalHeader));
 
   int32_t pos = this->leBsearchInternal(slots, itemCount, key);
@@ -265,11 +248,6 @@ inline void InternalPage::putInternal(const unsafe_buf<byte>& key, pageptr_t pag
 
   int32_t insertIn = this->leBsearchInternal(slots, itemCount, key);
 
-  if (insertIn == -1) {
-    header->lPtr = page;
-    return;
-  }
-
   insertIn += 1;
 
   assert(insertIn >= 0);
@@ -278,14 +256,8 @@ inline void InternalPage::putInternal(const unsafe_buf<byte>& key, pageptr_t pag
   this->insertInternalSlot(insertIn, key, page);
 }
 
-inline void InternalPage::delInternal(int32_t index) {
+inline void InternalPage::delInternal(pagesize_t index) {
   assert(this->countInternal() > index);
-
-  if (index == -1) {
-    InternalHeader* header = reinterpret_cast<InternalHeader*>(this->page.data.data() + 0);
-    header->lPtr = 0;
-    return;
-  }
 
   InternalSlot* slot = reinterpret_cast<InternalSlot*>(this->page.data.data() + sizeof(InternalHeader) + index * sizeof(InternalSlot));
   pagesize_t delOffset = slot->offset.value();
@@ -309,11 +281,11 @@ inline void InternalPage::delInternal(int32_t index) {
   }
 }
 
-void InternalPage::delRangeInternal(int32_t start, int32_t end) {
+void InternalPage::delRangeInternal(pagesize_t start, pagesize_t end) {
   assert(this->countInternal() >= end);
   assert(end > start);
 
-  for (int32_t i = end - 1; i >= start; i--) {
+  for (pagesize_t i = end - 1; i >= start; i--) {
     this->delInternal(i);
   }
 }
