@@ -1,48 +1,51 @@
-# project('stupiddb', 'cpp')
-
-# add_global_arguments('-Og', '-std=gnu++2b', language: 'cpp')
-
-# boost = dependency('boost', method: 'pkg-config')
-
-# src = [
-#   './src/engine/bptree/test/test.cpp',
-#   './src/engine/bptree/bptree.cpp',
-#   './src/engine/page/page.cpp',
-# ]
-
-# executable('bptree_test', src, dependencies: [boost])
-
 project(
-    'stupiddb',
+    'stupid_db',
     'cpp',
     version: '1.0.0',
-    default_options: [
-        'cpp_std=c++23'
-    ]
+    default_options: {
+        'cpp_std': 'c++23',
+        # 'cpp_args': [
+        #     'O0', '-g3',
+        #     '-fsanitize=address,undefined'
+        # ]
+    }
 )
 
-add_global_arguments('-O0' , '-g3', '-std=gnu++2b', language: 'cpp')
+add_global_arguments('-O0' , '-g3', '-std=gnu++2b',  language: 'cpp')
+add_global_link_arguments('-O0' , '-g3', '-std=gnu++2b', language: 'cpp')
 
-boost_dep = dependency('boost', method: 'pkg-config', required: false)  
+boost_dep = dependency('boost', modules: ['thread'], method: 'pkg-config', required: false)  
 
 if not boost_dep.found()
-    boost_dep = dependency('boost', method: 'cmake', required: false)
+    boost_dep = dependency('boost', modules: ['thread'], method: 'cmake', required: false)
+endif
+
+json_dep = dependency('nlohmann_json', method: 'pkg-config', required: false)  
+
+if not json_dep.found()
+    json_dep = dependency('nlohmann_json', method: 'cmake', required: false)
 endif
 
 include_dirs = include_directories('src')
 
-src = files(
-    'src/unitybuild.cpp'
+test_pager_src = files(
+    'src/test_pager_unitybuild.cpp'
 )
 
-test_exe = executable(
-    'test_bptree',
-    sources: src,
+test_pager_exe = executable(
+    'test_pager',
+    sources: test_pager_src,
     include_directories: include_dirs,
     dependencies: [boost_dep]
 )
 
-test(
-    'bptree_test',
-    test_exe
+service_src = files(
+    'src/service_unitybuild.cpp'
+)
+
+service_exe = executable(
+    'stupid_db',
+    sources: service_src,
+    include_directories: include_dirs,
+    dependencies: [boost_dep, json_dep]
 )

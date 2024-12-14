@@ -63,7 +63,8 @@ Internal item slot:
 
 #include <vector>
 #include <cstddef>
-#include <cstdint>
+#include <cmath>
+#include <stdint.h>
 
 #include <boost/endian/buffers.hpp>
 
@@ -74,12 +75,14 @@ using std::byte;
 
 using namespace boost::endian;
 
-#define MAX_PAGE_SIZE 4096
-#define MERGE_THRESHOLD_PAGE_SIZE 1024
+#define PAGE_SIZE (4096)
+#define MERGE_THRESHOLD_PAGE_SIZE (1024)
+#define MAX_DELETED_COUNT ((PAGE_SIZE - sizeof(DeletedHeader)) / sizeof(DeletedSlot))
 
 namespace {
   struct Header {
     big_uint16_buf_t flags;
+    big_uint16_buf_t byteSize;
   };
 
   struct LeafHeader {
@@ -103,6 +106,17 @@ namespace {
     big_uint16_buf_t offset;
     big_uint16_buf_t ksize;
     big_uint48_buf_t gePtr; // greater or equal
+    // less-than pointer deleted
+  };
+
+  struct DeletedHeader {
+    Header header;
+    big_uint16_buf_t count;
+    big_uint48_buf_t next;
+  };
+
+  struct DeletedSlot {
+    big_uint48_buf_t ptr;
   };
 };
 
@@ -111,25 +125,32 @@ typedef uint64_t pageptr_t;
 typedef uint16_t pagesize_t;
 
 enum class PageType: uint8_t {
-  Meta = 0x0,
+  // Meta = 0x0,
   Internal = 0x1,
   Leaf = 0x2,
-  Overflow = 0x3
+  Overflow = 0x3,
+  Deleted = 0x4,
 };
 
 class Page {
- private:
+ protected:
   vector<byte> data;
+
+  // for byteSize field (needed for pager)
+  pagesize_t getByteSize();
+  void setPageType(pagesize_t size);
  public:
-  friend class Pager;
+  friend class TransactionalPager;
   friend class InternalPage;
   friend class LeafPage;
+  friend class DeletedPage;
 
   Page();
   Page(vector<byte>& data);
   Page(unsafe_buf<byte>& data);
   static Page createInternal();
   static Page createLeaf();
+  static Page createDeleted();
 
   PageType getPageType();
   void setPageType(PageType type);
@@ -142,7 +163,6 @@ class Page {
 
 class InternalPage {
  private:
-  // int32_t leBsearchInternal(InternalSlot* slots, pagesize_t itemCount, const vector<byte>& key);
   int32_t leBsearchInternal(InternalSlot* slots, pagesize_t itemCount, const unsafe_buf<byte>& key);
   void insertInternalSlot(pagesize_t insertIn, const unsafe_buf<byte>& key, pageptr_t page);
  public:
@@ -160,8 +180,8 @@ class InternalPage {
   void setKeyInternal(pagesize_t index, const unsafe_buf<byte>& key, pageptr_t page);
   void setGEptr(pagesize_t index, pageptr_t page);
 
-  int32_t searchInternal(const vector<byte>& key); // -1 means key is less than anything else (get lPtr)
-  int32_t searchInternal(const unsafe_buf<byte>& key); // -1 means key is less than anything else (get lPtr)
+  int32_t searchInternal(const vector<byte>& key); // -1 means key not found
+  int32_t searchInternal(const unsafe_buf<byte>& key); // -1 means key not found
 
   void putInternal(const vector<byte>& key, pageptr_t page);
   void putInternal(const unsafe_buf<byte>& key, pageptr_t page);
@@ -172,9 +192,7 @@ class InternalPage {
 
 class LeafPage {
  private:
-  // int32_t exactBsearchLeaf(LeafSlot* slots, pagesize_t itemCount, const vector<byte>& key);
   int32_t exactBsearchLeaf(LeafSlot* slots, pagesize_t itemCount, const unsafe_buf<byte>& key);
-  // int32_t leBsearchLeaf(LeafSlot* slots, pagesize_t itemCount, const vector<byte>& key);
   int32_t leBsearchLeaf(LeafSlot* slots, pagesize_t itemCount, const unsafe_buf<byte>& key, bool& exact);
  public:
   Page& page;
@@ -198,4 +216,18 @@ class LeafPage {
 
   void delLeaf(pagesize_t index);
   void delRangeLeaf(pagesize_t start, pagesize_t end); // [start, end)
+};
+
+class DeletedPage {
+ public:
+  Page& page;
+
+  DeletedPage(Page& page): page(page) {};
+
+  pageptr_t getNext();
+  void setNext(pageptr_t next);
+
+  pagesize_t getCount();
+  pageptr_t getPtr(pagesize_t index);
+  void putPtr(pagesize_t ptr);
 };

@@ -1,0 +1,5 @@
+#include "./engine/page/page.cpp"
+#include "./engine/page/meta_page.cpp"
+#include "./engine/bptree/bptree.cpp"
+#include "./engine/pager/transactional_pager.cpp"
+#include "./service/main.cpp"

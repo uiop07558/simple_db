@@ -8,11 +8,14 @@
 
 using std::byte;
 using std::vector;
+using std::map;
+using std::cout;
+using std::endl;
 
 // Mock Pager for Testing
 class MockPager : public Pager {
-public:
-  std::map<pageptr_t, Page> pages;
+ public:
+  map<pageptr_t, Page> pages;
   pageptr_t nextId = 1;
 
   pageptr_t addPage(const Page& page) override {
@@ -21,7 +24,7 @@ public:
     return id;
   }
 
-  Page getPage(pageptr_t id) const override {
+  Page getPage(pageptr_t id) override {
     return pages.at(id);
   }
 
@@ -36,9 +39,9 @@ public:
 #define LARGE_VALUE_SIZE 1500
 
 #define RUN_TEST(test) \
-  std::cout << "Running " << #test << "... "; \
+  cout << "Running " << #test << "... "; \
   test(); \
-  std::cout << "PASSED\n";
+  cout << "PASSED\n";
 
 vector<byte> generateBytes(size_t size, byte start = byte{0}) {
   vector<byte> result(size);
@@ -184,26 +187,57 @@ void testStress() {
 
   const int NUM_KEYS = 256;
   for (int i = 0; i < NUM_KEYS; ++i) {
-    tree.insert(generateBytes(LARGE_KEY_SIZE, byte{i}),
-          generateBytes(LARGE_VALUE_SIZE, byte{i}));
+    auto key = generateBytes(LARGE_KEY_SIZE, byte{i});
+    auto value = generateBytes(LARGE_VALUE_SIZE, byte{i+59});
+    tree.insert(key, value);
   }
 
   for (int i = 0; i < NUM_KEYS; ++i) {
-    auto result = tree.search(generateBytes(LARGE_KEY_SIZE, byte{i}));
+    auto key = generateBytes(LARGE_KEY_SIZE, byte{i});
+    auto result = tree.search(key);
     assert(result.has_value());
-    assert(result.value() == generateBytes(LARGE_VALUE_SIZE, byte{i}));
+    assert(result.value() == generateBytes(LARGE_VALUE_SIZE, byte{i+59}));
   }
 
   for (int i = NUM_KEYS / 2; i < NUM_KEYS; ++i) {
-    tree.remove(generateBytes(LARGE_KEY_SIZE, byte{i}));
+    auto key = generateBytes(LARGE_KEY_SIZE, byte{i});
+    tree.remove(key);
   }
 
   for (int i = 0; i < NUM_KEYS / 2; ++i) {
-    auto result = tree.search(generateBytes(LARGE_KEY_SIZE, byte{i}));
+    auto key = generateBytes(LARGE_KEY_SIZE, byte{i});
+    auto result = tree.search(key);
     assert(result.has_value());
-    assert(result.value() == generateBytes(LARGE_VALUE_SIZE, byte{i}));
+    assert(result.value() == generateBytes(LARGE_VALUE_SIZE, byte{i+59}));
   }
 }
+
+void testBptreeIterator() {
+  MockPager pager;
+  initBptree(pager);
+  Bptree tree(pager, 1);
+
+  vector<pair<vector<byte>, vector<byte>>> keyValues;
+  for (int i = 0; i < NUM_LARGE_INSERTS; ++i) {
+    auto key = generateBytes(LARGE_KEY_SIZE, byte{i});
+    auto value = generateBytes(LARGE_VALUE_SIZE, byte{i + 50});
+    keyValues.emplace_back(key, value);
+    tree.insert(key, value);
+  }
+
+  BptreeIterator it = tree.iterate();
+  size_t index = 0;
+
+  while (it.hasNext()) {
+    auto [key, value] = it.next();
+    assert(key == keyValues[index].first);
+    assert(value == keyValues[index].second);
+    index += 1;
+  }
+
+  assert(index == keyValues.size());
+}
+
 
 int main() {
   RUN_TEST(testInsertSingleElement);
@@ -214,7 +248,8 @@ int main() {
   RUN_TEST(testDeleteNonExistentKey);
   RUN_TEST(testLeafMerge);
   RUN_TEST(testStress);
+  RUN_TEST(testBptreeIterator);
 
-  std::cout << "All tests passed" << std::endl;
+  cout << "All tests passed" << endl;
   return 0;
 }

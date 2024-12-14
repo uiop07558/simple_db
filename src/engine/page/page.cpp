@@ -7,7 +7,7 @@
 
 using std::to_underlying;
 
-#define assertPageType(pageType) assert(pageType == PageType::Meta || pageType == PageType::Internal || pageType == PageType::Leaf || pageType == PageType::Overflow)
+#define assertPageType(pageType) assert(pageType == PageType::Internal || pageType == PageType::Leaf || pageType == PageType::Overflow || pageType == PageType::Deleted)
 
 #define PAGE_TYPE_BIT_DIST 12
 
@@ -21,7 +21,7 @@ Page::Page() {
   this->data = vector<byte>();
 }
 
-Page::Page(vector<byte> &data) {
+Page::Page(vector<byte>& data) {
   this->data = data;
 }
 
@@ -50,6 +50,17 @@ Page Page::createLeaf() {
   return page;
 }
 
+Page Page::createDeleted() {
+  auto page = Page();
+  page.data.resize(sizeof(DeletedHeader));
+  DeletedHeader* header = reinterpret_cast<DeletedHeader*>(page.data.data() + 0);
+  page.setPageType(PageType::Deleted);
+  header->next = 0;
+  header->count = 0;
+
+  return page;
+}
+
 inline PageType Page::getPageType() {
   assert(this->byteSize() >= sizeof(Header));
 
@@ -74,12 +85,28 @@ inline void Page::setPageType(PageType type) {
   header->flags = flags;
 }
 
+inline pagesize_t Page::getByteSize() {
+  assert(this->byteSize() >= sizeof(Header));
+
+  Header* header = reinterpret_cast<Header*>(this->data.data() + 0);
+  pagesize_t size = header->byteSize.value();
+  return size;
+}
+
+inline void Page::setPageType(pagesize_t size) {
+  assert(this->byteSize() >= sizeof(Header));
+
+  Header* header = reinterpret_cast<Header*>(this->data.data() + 0);
+  header->byteSize = size;
+}
+
+
 inline size_t Page::byteSize() {
   return this->data.size();
 }
 
 inline bool Page::isOversized() {
-  return this->byteSize() > MAX_PAGE_SIZE;
+  return this->byteSize() > PAGE_SIZE;
 }
 
 inline bool Page::isUndersized() {
@@ -509,4 +536,49 @@ inline void LeafPage::delRangeLeaf(pagesize_t start, pagesize_t end) {
   for (pagesize_t i = end - 1; i >= start; i--) {
     this->delLeaf(i);
   }
+}
+
+pageptr_t DeletedPage::getNext() {
+  assert(this->page.getPageType() == PageType::Deleted);
+  assert(this->page.byteSize() >= sizeof(DeletedHeader));
+
+  DeletedHeader* header = reinterpret_cast<DeletedHeader*>(this->page.data.data() + 0);
+  pageptr_t next = header->next.value();
+  return next;
+}
+
+void DeletedPage::setNext(pageptr_t next) {
+  assert(this->page.getPageType() == PageType::Deleted);
+  assert(this->page.byteSize() >= sizeof(DeletedHeader));
+
+  DeletedHeader* header = reinterpret_cast<DeletedHeader*>(this->page.data.data() + 0);
+  header->next = next;
+}
+
+pagesize_t DeletedPage::getCount(){
+  assert(this->page.getPageType() == PageType::Deleted);
+  assert(this->page.byteSize() >= sizeof(DeletedHeader));
+
+  DeletedHeader* header = reinterpret_cast<DeletedHeader*>(this->page.data.data() + 0);
+  pagesize_t cnt = header->count.value();
+  return cnt;
+}
+
+pageptr_t DeletedPage::getPtr(pagesize_t index) {
+  assert(this->page.byteSize() >= sizeof(DeletedHeader) + getCount() * sizeof(DeletedSlot));
+  assert(index < getCount());
+
+  DeletedSlot* slot = reinterpret_cast<DeletedSlot*>(this->page.data.data() + sizeof(DeletedHeader) + index * sizeof(DeletedSlot));
+  pageptr_t ptr = slot->ptr.value();
+  return ptr;
+}
+
+void DeletedPage::putPtr(pagesize_t newPtr) {
+  assert(this->page.byteSize() >= sizeof(DeletedHeader) + getCount() * sizeof(DeletedSlot));
+
+  DeletedSlot newSlot;
+  newSlot.ptr = newPtr;
+  page.data.insert(page.data.end(), reinterpret_cast<byte*>(&newSlot), reinterpret_cast<byte*>(&newSlot) + sizeof(DeletedSlot));
+  DeletedHeader* header = reinterpret_cast<DeletedHeader*>(this->page.data.data() + 0);
+  header->count = header->count.value() + 1;
 }

@@ -9,7 +9,13 @@ using std::swap;
 using std::max;
 using std::min;
 
-Bptree::Bptree(Pager& pager, pageptr_t rootId): pager(pager), rootId(rootId) {}
+Bptree::Bptree(Pager& pager, pageptr_t rootId): rootId(rootId), pager(pager) {}
+
+Bptree Bptree::createTree(Pager& pager) {
+  Page leafPage = Page::createLeaf();
+  pageptr_t rootId = pager.addPage(leafPage);
+  return Bptree(pager, rootId);
+}
 
 void Bptree::insert(const vector<byte> &key, const vector<byte> &value) {
   pageptr_t newId = 0;
@@ -225,7 +231,7 @@ void Bptree::deleteRecursive(pageptr_t pageId, const std::vector<byte>& key, pag
         pageptr_t siblingId = internal.getPageptr(siblingIndex);  
         Page siblingPage = this->pager.getPage(siblingId);
 
-        if (childPage.byteSize() + siblingPage.byteSize() < MAX_PAGE_SIZE) { // merging
+        if (childPage.byteSize() + siblingPage.byteSize() < PAGE_SIZE) { // merging
           switch (childPage.getPageType()) {
             case PageType::Leaf: {
               LeafPage child(childPage);
@@ -278,4 +284,74 @@ void Bptree::deleteRecursive(pageptr_t pageId, const std::vector<byte>& key, pag
       return;
     }
   }
+}
+
+BptreeIterator::BptreeIterator(Bptree &bptree): bptree(bptree), endReached(false) {
+  pageptr_t pageId = this->bptree.rootId;
+  while (true) {
+    pageStack.emplace(0, pageId);
+    Page page = this->bptree.pager.getPage(pageId);
+    if (page.getPageType() == PageType::Leaf) {
+      break;
+    }
+    InternalPage internal(page);
+    pageId = internal.getPageptr(0);
+  }
+}
+
+inline bool BptreeIterator::hasNext() const {
+  return !pageStack.empty();
+}
+
+pair<vector<byte>, vector<byte>> BptreeIterator::next() {
+  assert("iterator's end reached" && !this->endReached);
+
+  auto [currentIndex, currentPageId] = this->pageStack.top();
+  this->pageStack.pop();
+
+  Page page = this->bptree.pager.getPage(currentPageId);
+  LeafPage leaf(page);
+
+  assert(currentIndex < leaf.countLeaf());
+
+  vector<byte> key = leaf.getKeyLeaf(currentIndex).toVector();
+  vector<byte> value = leaf.getValue(currentIndex).toVector();
+
+  if (currentIndex + 1 < leaf.countLeaf()) {
+    pageStack.emplace(currentIndex + 1, currentPageId);
+  }
+  else {
+    while (!this->pageStack.empty()) {
+      auto [parentIndex, parentPageId] = this->pageStack.top();
+      this->pageStack.pop();
+
+      Page parentPage = this->bptree.pager.getPage(parentPageId);
+      if (parentPage.getPageType() == PageType::Internal) {
+        InternalPage internal(parentPage);
+
+        if (parentIndex + 1 < internal.countInternal()) {
+          pageStack.emplace(parentIndex + 1, parentPageId);
+          pageptr_t nextPageId = internal.getPageptr(parentIndex + 1);
+
+          while (true) {
+            pageStack.emplace(0, nextPageId);
+            Page page = this->bptree.pager.getPage(nextPageId);
+            if (page.getPageType() == PageType::Leaf) {
+              break;
+            }
+            InternalPage internal(page);
+            nextPageId = internal.getPageptr(0);
+          }
+
+          break;
+        }
+      }
+    }
+
+    if (this->pageStack.empty()) {
+      this->endReached = true;
+    }
+  }
+
+  return {key, value};
 }
