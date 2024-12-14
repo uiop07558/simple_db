@@ -1,5 +1,5 @@
 project(
-    'stupid_db',
+    'simple_db',
     'cpp',
     version: '1.0.0',
     default_options: {
@@ -52,7 +52,7 @@ service_src = files(
 )
 
 service_exe = executable(
-    'stupid_db',
+    'simple_db',
     sources: service_src,
     include_directories: include_dirs,
     dependencies: [boost_dep, json_dep]
