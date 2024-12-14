@@ -26,6 +26,14 @@ if not json_dep.found()
     json_dep = dependency('nlohmann_json', method: 'cmake', required: false)
 endif
 
+# subproject('abseil-cpp')
+# subproject('c-ares')
+# subproject('openssl')
+# subproject('protobuf')
+# subproject('re2')
+
+# grpc_dep = subproject('grpc').get_variable('grpc_dep')
+
 include_dirs = include_directories('src')
 
 test_pager_src = files(

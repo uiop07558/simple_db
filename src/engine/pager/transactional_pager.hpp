@@ -34,7 +34,6 @@ using std::filesystem::path;
 using boost::upgrade_mutex;
 
 typedef uint64_t txid_t;
-typedef uint64_t tableid_t;
 
 enum class PageActionType: uint8_t {
   Write,
@@ -62,14 +61,14 @@ class TransactionalPagerLocal: public Pager {
   Page getPage(pageptr_t id) override;
   void delPage(pageptr_t id) override;
 
-  void saveMetaPage(const MetaPage& metaPage);
-  MetaPage getMetaPage();
+  void saveMetaPage(const MetaPage& metaPage) override;
+  MetaPage getMetaPage() override;
 };
 
 namespace {
   struct TxInfo {
     bool writeMode;
-    tableid_t tableId;
+    string tableId;
   };
 };
 
@@ -81,7 +80,7 @@ class TransactionalPager {
   size_t fileLen{};
   upgrade_mutex fileLock; // fileLock protects only info about mapping, not the mapping itself
 
-  unordered_map<tableid_t, upgrade_mutex> tableLocks;
+  unordered_map<string, upgrade_mutex> tableLocks;
   txid_t txidSeq{};
   unordered_map<txid_t, TxInfo> txInfo; 
   unordered_map<txid_t, deque<PageAction>> actions;
@@ -181,7 +180,7 @@ class TransactionalPager {
   Page getPage(pageptr_t id, txid_t txid) ;
   void delPage(pageptr_t id, txid_t txid);
 
-  txid_t startTransaction(bool writable, tableid_t tableId);
+  txid_t startTransaction(bool writable, string tableId);
   inline TransactionalPagerLocal getLocal(txid_t txid) { return TransactionalPagerLocal(*this, txid); }
 
   void commit(txid_t txid);

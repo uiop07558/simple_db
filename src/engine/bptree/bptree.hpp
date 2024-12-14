@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <stack>
+#include <functional>
 
 #include "../pager/pager.hpp"
 #include "../page/page.hpp"
@@ -9,6 +10,8 @@
 using std::optional;
 using std::stack;
 using std::pair;
+using std::reference_wrapper;
+using std::swap;
 
 class Bptree;
 class BptreeIterator;
@@ -24,12 +27,21 @@ class BptreeIterator {
   Bptree& bptree;
 
   stack<pair<pagesize_t, pageptr_t>, vector<pair<pagesize_t, pageptr_t>>> pageStack;
-  bool endReached;
 };
 
 class Bptree {
  public:
   Bptree(Pager& pager, pageptr_t rootId);
+
+  // Bptree(const Bptree&) = default;
+  // Bptree operator=(const Bptree& tree) {
+  //   return Bptree(tree)
+  // }
+  // Bptree(Bptree&&) = default;
+  // Bptree operator=(Bptree&& tree) {
+  //   return Bptree(tree);
+  // }
+  // ~Bptree() = default;
 
   static Bptree createTree(Pager& pager);
 

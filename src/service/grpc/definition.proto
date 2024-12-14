@@ -1,0 +1,130 @@
+syntax = "proto3";
+
+package objectstore;
+
+service ObjectStore {
+  rpc CreateTable(CreateTableRequest) returns (CreateTableResponse);
+  rpc GetTableInfo(GetTableInfoRequest) returns (GetTableInfoResponse);
+
+  rpc Transaction(stream TransactionRequest) returns (stream TransactionResponse);
+}
+
+
+message CreateTableRequest {
+  string tableName = 1;
+  repeated Field fields = 2;
+}
+message GetTableInfoRequest {
+  string tableName = 1;
+}
+
+enum FieldType {
+  Null = 0;
+  Int = 1;
+  Float = 2;
+  Bool = 3;
+  String = 4;
+}
+
+message FieldDef {
+  string name = 1;
+  FieldType type = 2;
+  bool isKey = 3;
+}
+
+message CreateTableResponse {}
+
+message GetTableInfoResponse {
+  repeated FieldDef fields = 1;
+}
+
+message TransactionRequest {
+  oneof payload {
+    StartTransactionRequest startTransaction = 1;
+    InsertRowRequest insertRow = 2;
+    DeleteRowRequest deleteRow = 3;
+    QueryRowsRequest queryRows = 4;
+    UpdateRowRequest updateRow = 5;
+    CommitTransactionRequest commitTransaction = 6;
+    RollbackTransactionRequest rollbackTransaction = 7;
+  }
+}
+
+message TransactionResponse {
+  oneof payload {
+    StartTransactionResponse startTransaction = 1;
+    InsertRowResponse insertRow = 2;
+    DeleteRowResponse deleteRow = 3;
+    QueryRowResponse queryRows = 4;
+    UpdateRowResponse updateRow = 5;
+    CommitTransactionResponse commitTransaction = 6;
+    RollbackTransactionResponse rollbackTransaction = 7;
+    ErrorResponse error = 8;
+  }
+}
+
+message FieldData {
+  oneof payload {
+    int64 intMember = 1;
+    double floatMember = 2;
+    bool boolMember = 3;
+    string stringMember = 4;
+  }
+}
+
+message Field {
+  string name = 1;
+  FieldType type = 2;
+  FieldData data = 3;
+}
+
+message StartTransactionRequest {
+  string tableName = 1;
+  bool writable = 2;
+}
+
+message StartTransactionResponse {}
+
+message CommitTransactionRequest {}
+
+message CommitTransactionResponse {}
+
+message RollbackTransactionRequest {}
+
+message RollbackTransactionResponse {}
+
+message InsertRowRequest {
+  repeated Field value = 1;
+}
+
+message InsertRowResponse {}
+
+message DeleteRowRequest {
+  repeated Field conditions = 1;
+}
+
+message DeleteRowResponse {}
+
+message QueryRowsRequest {
+  repeated Field conditions = 1;
+}
+
+message QueryRowResponse {
+  repeated Field key = 1;
+  repeated Field value = 2;
+}
+
+// message QueryRowsResponse {
+//   repeated QueryRow rows = 1;
+// }
+
+message UpdateRowRequest {
+  repeated Field key = 1;
+  repeated Field value = 2;
+}
+
+message UpdateRowResponse {}
+
+message ErrorResponse {
+  string message = 1;
+}

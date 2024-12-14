@@ -169,7 +169,7 @@ void TransactionalPager::loadFreeList() {
   }
 }
 
-txid_t TransactionalPager::startTransaction(bool writable, tableid_t tableId) {
+txid_t TransactionalPager::startTransaction(bool writable, string tableId) {
   txid_t retId = 0;
   txLock.lock();
   actions[txidSeq] = deque<PageAction>();

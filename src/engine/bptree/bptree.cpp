@@ -286,7 +286,7 @@ void Bptree::deleteRecursive(pageptr_t pageId, const std::vector<byte>& key, pag
   }
 }
 
-BptreeIterator::BptreeIterator(Bptree &bptree): bptree(bptree), endReached(false) {
+BptreeIterator::BptreeIterator(Bptree &bptree): bptree(bptree) {
   pageptr_t pageId = this->bptree.rootId;
   while (true) {
     pageStack.emplace(0, pageId);
@@ -304,8 +304,6 @@ inline bool BptreeIterator::hasNext() const {
 }
 
 pair<vector<byte>, vector<byte>> BptreeIterator::next() {
-  assert("iterator's end reached" && !this->endReached);
-
   auto [currentIndex, currentPageId] = this->pageStack.top();
   this->pageStack.pop();
 
@@ -346,10 +344,6 @@ pair<vector<byte>, vector<byte>> BptreeIterator::next() {
           break;
         }
       }
-    }
-
-    if (this->pageStack.empty()) {
-      this->endReached = true;
     }
   }
 
