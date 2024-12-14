@@ -52,6 +52,7 @@ class ObjectStoreImpl final: public objectstore::ObjectStore::Service {
       for (int i = 0; i < metadata.fields.size(); i++) {
         objectstore::FieldDef fieldDef;
         fieldDef.set_name(metadata.fields[i].name);
+        fieldDef.s
         response->mutable_fields()->Add(fieldDef);
       }
 

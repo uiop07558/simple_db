@@ -47,13 +47,13 @@ test_pager_exe = executable(
     dependencies: [boost_dep]
 )
 
-service_src = files(
-    'src/service_unitybuild.cpp'
-)
+# service_src = files(
+#     'src/service_unitybuild.cpp'
+# )
 
-service_exe = executable(
-    'simple_db',
-    sources: service_src,
-    include_directories: include_dirs,
-    dependencies: [boost_dep, json_dep]
-)
+# service_exe = executable(
+#     'simple_db',
+#     sources: service_src,
+#     include_directories: include_dirs,
+#     dependencies: [boost_dep, json_dep]
+# )

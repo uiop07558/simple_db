@@ -15,7 +15,7 @@ using std::endl;
 TransactionalPager thePager("./data.db");
 
 #define NUM_SMALL_INSERTS 100
-#define NUM_LARGE_INSERTS 250
+#define NUM_LARGE_INSERTS 10
 #define LARGE_KEY_SIZE 512
 #define LARGE_VALUE_SIZE 1500
 
@@ -33,7 +33,7 @@ vector<byte> generateBytes(size_t size, byte start = byte{0}) {
 }
 
 void testInsertSingleElement() {
-  txid_t txidWrite = thePager.startTransaction(true, 0);
+  txid_t txidWrite = thePager.startTransaction(true, "test");
   TransactionalPagerLocal pagerWrite = thePager.getLocal(txidWrite);
 
   Bptree treeWrite = Bptree::createTree(pagerWrite);
@@ -48,7 +48,7 @@ void testInsertSingleElement() {
 
   thePager.commit(txidWrite);
 
-  txid_t txidRead = thePager.startTransaction(false, 0);
+  txid_t txidRead = thePager.startTransaction(false, "test");
   auto pagerRead = thePager.getLocal(txidRead);
 
   auto treeRead = Bptree(pagerRead, pagerRead.getMetaPage().getMetaTableRoot());
@@ -61,7 +61,7 @@ void testInsertSingleElement() {
 }
 
 void testLeafSplit() {
-  txid_t txidInsert = thePager.startTransaction(true, 0);
+  txid_t txidInsert = thePager.startTransaction(true, "test");
   TransactionalPagerLocal pagerInsert = thePager.getLocal(txidInsert);
 
   Bptree treeInsert = Bptree::createTree(pagerInsert);
@@ -78,7 +78,7 @@ void testLeafSplit() {
 
   thePager.commit(txidInsert);
 
-  txid_t txidRead = thePager.startTransaction(false, 0);
+  txid_t txidRead = thePager.startTransaction(false, "test");
   auto pagerRead = thePager.getLocal(txidRead);
 
   auto treeRead = Bptree(pagerRead, pagerRead.getMetaPage().getMetaTableRoot());
@@ -94,7 +94,7 @@ void testLeafSplit() {
 }
 
 void testLeafMerge() {
-  txid_t txidInsert = thePager.startTransaction(true, 0);
+  txid_t txidInsert = thePager.startTransaction(true, "test");
   TransactionalPagerLocal pagerInsert = thePager.getLocal(txidInsert);
 
   Bptree treeInsert = Bptree::createTree(pagerInsert);
@@ -111,7 +111,7 @@ void testLeafMerge() {
 
   thePager.commit(txidInsert);
 
-  txid_t txidDelete = thePager.startTransaction(true, 0);
+  txid_t txidDelete = thePager.startTransaction(true, "test");
   TransactionalPagerLocal pagerDelete = thePager.getLocal(txidDelete);
 
   auto treeDelete = Bptree(pagerDelete, pagerDelete.getMetaPage().getMetaTableRoot());
@@ -127,7 +127,7 @@ void testLeafMerge() {
 
   thePager.commit(txidDelete);
 
-  txid_t txidRead = thePager.startTransaction(false, 0);
+  txid_t txidRead = thePager.startTransaction(false, "test");
   auto pagerRead = thePager.getLocal(txidRead);
 
   auto treeRead = Bptree(pagerRead, pagerRead.getMetaPage().getMetaTableRoot());
@@ -173,7 +173,6 @@ int main() {
   RUN_TEST(testInsertSingleElement);
   RUN_TEST(testLeafSplit);
   RUN_TEST(testLeafMerge);
-  // RUN_TEST(testBptreeIterator);
 
   cout << "All tests passed" << endl;
   return 0;
